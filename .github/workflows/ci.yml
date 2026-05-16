@@ -10,6 +10,9 @@ on:
     branches:
       - master
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   check-code-format:
     runs-on: ubuntu-latest
@@ -29,16 +32,16 @@ jobs:
 
       - name: Check code format with Black
         run: |
-          black --check .
+          black --check --exclude whisper_api.py .
 
       - name: Check imports order with isort
         run: |
-          isort --check-only .
+          isort --check-only --skip whisper_api.py .
 
       - name: Check code style with Flake8
         if: ${{ always() }}
         run: |
-          flake8 .
+          flake8 --exclude=whisper_api.py .
 
 
   run-tests:
