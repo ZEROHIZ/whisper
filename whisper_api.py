@@ -9,16 +9,29 @@ import time
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse
 import uvicorn
+import gc
 
 app = FastAPI(title="Faster Whisper API Server")
 
-# 全局模型缓存
+# 模型加载配置
+UNLOAD_MODEL_AFTER_USE = os.getenv("UNLOAD_MODEL_AFTER_USE", "true").lower() == "true"
 model_cache = {}
 
 def get_model(model_id, device, compute_type, cache_dir):
     key = f"{model_id}_{device}_{compute_type}"
+    
+    # 如果开启了自动卸载，则不使用缓存，每次都新建
+    if UNLOAD_MODEL_AFTER_USE:
+        print(f"正在加载模型 (即用即卸模式): {model_id} (设备: {device})...")
+        return WhisperModel(
+            model_id, 
+            device=device, 
+            compute_type=compute_type,
+            download_root=cache_dir
+        )
+        
     if key not in model_cache:
-        print(f"正在加载模型: {model_id} (设备: {device})...")
+        print(f"正在加载模型 (常驻模式): {model_id} (设备: {device})...")
         model_cache[key] = WhisperModel(
             model_id, 
             device=device, 
@@ -179,7 +192,7 @@ async def transcribe(
         compute_type = "int8" if run_device == "cpu" else "default"
         whisper = get_model(model, run_device, compute_type, os.getenv("WHISPER_MODEL_CACHE"))
 
-        # 执行转录，initial_prompt 非常有用，可以引导模型识别生僻词或维持术语一致性
+        # 执行转录
         segments_gen, info = whisper.transcribe(working_file, beam_size=5, initial_prompt=initial_prompt)
         segments = list(segments_gen)
 
@@ -187,6 +200,12 @@ async def transcribe(
             result_segments = group_segments(segments, max_duration)
         else:
             result_segments = [{"start": round(s.start, 2), "end": round(s.end, 2), "text": s.text.strip()} for s in segments]
+
+        # 如果是即用即卸模式，显式删除对象并清理内存
+        if UNLOAD_MODEL_AFTER_USE:
+            del whisper
+            gc.collect()
+            print("模型已从内存中释放")
 
         return {"language": info.language, "segments": result_segments}
     except Exception as e:
