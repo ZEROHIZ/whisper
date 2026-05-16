@@ -190,6 +190,8 @@ async def transcribe(
 
         return {"language": info.language, "segments": result_segments}
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         if os.path.exists(tmp_path): os.remove(tmp_path)
